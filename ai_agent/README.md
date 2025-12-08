@@ -4,27 +4,17 @@ This project is a **Weather AI Agent** designed to provide live weather updates,
 
 ## Features
 
-- **Weather Data**: Fetches live weather data from Buienradar's API.
-- **Rain Forecast**: Predicts rain intensity and timing for the next 3 hours.
-- **Geolocation**: Uses the `geopy` library to find city coordinates and calculate distances to weather stations.
-- **Text-to-Speech**: Uses `pyttsx3` to provide voice alerts for weather summaries.
-- **Streamlit UI**: Offers a user-friendly interface for interacting with the weather agent.
+- **✅ Live Weather Data**: Fetches real-time weather from Buienradar's API.
+- **🗺️ Interactive Weather Map**: dynamic map showing weather stations across the Netherlands with color-coded conditions (Rain, Cold, Nice, Hot).
+- **🎯 Activity Recommendations**: Smart suggestions for outdoor activities like cycling, running, BBQ, and walking based on current conditions.
+- **👔 Smart Clothing Advisor**: Detailed outfit advice including layers, footwear, and accessories.
+- **🏙️ Multi-City Comparison**: Compare your city's weather side-by-side with 5 major Dutch cities (Amsterdam, Rotterdam, The Hague, Utrecht, Eindhoven).
+- **🗣️ Voice Alerts**: distinct text-to-speech weather summaries.
+- **🌧️ Rain Forecast**: Predicts rain intensity for the next 3 hours.
 
 ## How to Run
 
-### Command-Line Weather Agent
-
-1. Navigate to the `ai_agent` directory:
-   ```bash
-   cd ai_agent
-   ```
-2. Run the script:
-   ```bash
-   python weather_agent.py
-   ```
-3. Enter the city name when prompted to get the weather status.
-
-### Streamlit Weather Dashboard
+### Streamlit Weather Dashboard (Recommended)
 
 1. Navigate to the `ai_agent` directory:
    ```bash
@@ -34,11 +24,19 @@ This project is a **Weather AI Agent** designed to provide live weather updates,
    ```bash
    streamlit run weather_dashboard.py
    ```
-3. Open the provided URL in your browser to interact with the dashboard.
+3. Open the provided URL in your browser (usually `http://localhost:8501`).
+
+### Command-Line Weather Agent
+
+1. Run the script:
+   ```bash
+   python weather_agent.py
+   ```
+2. Enter the city name when prompted.
 
 ## Requirements
 
-Install the required dependencies using `pip`:
+Install the required dependencies:
 ```bash
 pip install -r ai_agent/requirements.txt
 ```
@@ -46,13 +44,12 @@ pip install -r ai_agent/requirements.txt
 ## Project Structure
 
 ```
-.gitattributes
-.gitignore
 ai_agent/
-    README.md
-    requirements.txt
-    weather_agent.py
-    weather_dashboard.py
+    README.md               # Project documentation
+    requirements.txt        # Python dependencies
+    weather_dashboard.py    # Main Streamlit application (GUI)
+    weather_agent.py        # Command-line interface logic
+    .env                    # Environment variables (optional)
 ```
 
-This project is ideal for users in the Netherlands who want quick and interactive weather updates.
+This project is ideal for users in the Netherlands who want a comprehensive, interactive personal weather assistant.
