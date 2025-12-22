@@ -1,0 +1,15 @@
+# Production-ready requirements (Python 3.9+)
+# For Python 3.7, use the versions currently in requirements.txt
+
+certifi>=2023.7.22
+charset-normalizer>=3.3.2
+geographiclib==2.1
+geopy==2.4.1
+idna>=3.7
+requests>=2.31.0
+urllib3>=1.26.18
+plotly>=5.18.0
+streamlit>=1.30.0
+folium
+streamlit-folium
+python-dotenv

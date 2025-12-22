@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import os
 import json
+import time
 from dotenv import load_dotenv
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
@@ -14,19 +15,61 @@ load_dotenv()
 
 # --- Utility functions ---
 
+def api_request_with_retry(url, max_retries=3, timeout=10):
+    """Make API request with retry logic and exponential backoff"""
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(url, timeout=timeout)
+            response.raise_for_status()
+            return response
+        except requests.exceptions.Timeout:
+            if attempt == max_retries - 1:
+                raise Exception(f"⏱️ Request timed out after {max_retries} attempts")
+            time.sleep(2 ** attempt)  # Exponential backoff: 1s, 2s, 4s
+        except requests.exceptions.ConnectionError:
+            if attempt == max_retries - 1:
+                raise Exception("🔌 No internet connection. Please check your network.")
+            time.sleep(2 ** attempt)
+        except requests.exceptions.HTTPError as e:
+            if attempt == max_retries - 1:
+                raise Exception(f"❌ API Error: {str(e)}")
+            time.sleep(2 ** attempt)
+        except requests.exceptions.RequestException as e:
+            if attempt == max_retries - 1:
+                raise Exception(f"❌ Request failed: {str(e)}")
+            time.sleep(2 ** attempt)
+    
+    raise Exception("❌ Failed after all retry attempts")
+
+
+@st.cache_data(ttl=3600)  # Cache for 1 hour
 def get_city_coordinates(city):
-    """Get city coordinates from OpenStreetMap"""
-    geolocator = Nominatim(user_agent="weather_agent")
-    location = geolocator.geocode(city + ", Netherlands")
+    """Get city coordinates and validate it's in Netherlands"""
+    geolocator = Nominatim(user_agent="weather_app", timeout=10)
+    
+    # Search WITHOUT Netherlands constraint to get the actual main city
+    # (searching "Madrid, Netherlands" might find a street named Madrid in NL)
+    location = geolocator.geocode(city)
+    
     if location:
-        return (location.latitude, location.longitude)
+        lat, lon = location.latitude, location.longitude
+        
+        # Validate coordinates are within Netherlands boundaries
+        # Netherlands: roughly 50.75°N to 53.7°N, 3.2°E to 7.2°E
+        if 50.5 <= lat <= 53.8 and 3.0 <= lon <= 7.5:
+            return (lat, lon)
+        else:
+            # City is outside Netherlands
+            return None
+    
+    # If no location found at all
     return None
 
 
 def find_nearest_station(user_coords):
     """Find nearest Buienradar station"""
     url = "https://data.buienradar.nl/2.0/feed/json"
-    response = requests.get(url)
+    response = api_request_with_retry(url)
     data = response.json()
     stations = data['actual']['stationmeasurements']
 
@@ -43,10 +86,11 @@ def find_nearest_station(user_coords):
     return nearest_station, min_distance
 
 
+@st.cache_data(ttl=900)  # Cache for 15 minutes
 def get_forecast(lat, lon):
     """Fetch 3-hour rain forecast"""
     url = f"https://gpsgadget.buienradar.nl/data/raintext?lat={lat}&lon={lon}"
-    response = requests.get(url)
+    response = api_request_with_retry(url)
     lines = response.text.strip().split("\n")
 
     forecast_data = []
@@ -62,84 +106,57 @@ def get_forecast(lat, lon):
         return "☀️ No rain expected in the next 3 hours."
 
 
-def chat_with_gemini(user_message, weather_context, api_key):
-    """Send a message to Gemini API with weather context and retry on rate limits"""
-    import time
-    
-    if not api_key:
-        return "❌ Please enter your Gemini API key in the sidebar to use the chat feature."
-    
-    # Use gemini-pro on v1 endpoint (most stable)
-    url = "https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={key}".format(key=api_key)
-    
-    # Build the prompt with weather context
-    system_prompt = """You are a helpful weather assistant for the Netherlands. 
-You have access to the current weather data and should answer questions about weather, activities, and recommendations.
-
-Current Weather Data:
-{context}
-
-Answer the user's question in a friendly, concise way. Use emojis when appropriate. 
-If asked about activities, give practical advice based on the current conditions.
-If you don't have enough information to answer, say so politely.""".format(context=weather_context)
-
-    payload = {
-        "contents": [{
-            "parts": [{
-                "text": "{prompt}\n\nUser: {message}".format(prompt=system_prompt, message=user_message)
-            }]
-        }],
-        "generationConfig": {
-            "temperature": 0.7,
-            "maxOutputTokens": 500
-        }
-    }
-    
-    headers = {"Content-Type": "application/json"}
-    
-    # Retry logic with exponential backoff
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
-            
-            # Handle rate limit specifically
-            if response.status_code == 429:
-                if attempt < max_retries - 1:
-                    wait_time = (2 ** attempt)  # 1s, 2s, 4s
-                    return "⏳ Rate limit hit. Please wait {wait}s and try again. (Free tier has limits - wait between requests)".format(wait=wait_time)
-                else:
-                    return "❌ Rate limit exceeded. Please wait a minute before trying again.\n\n💡 Tip: The free Gemini API has rate limits. Wait 30-60 seconds between requests."
-            
-            response.raise_for_status()
-            result = response.json()
-            
-            # Extract the generated text
-            if 'candidates' in result and len(result['candidates']) > 0:
-                return result['candidates'][0]['content']['parts'][0]['text']
-            else:
-                return "Sorry, I couldn't generate a response. Please try again."
-                
-        except requests.exceptions.Timeout:
-            return "⏱️ Request timed out. Please try again."
-        except requests.exceptions.HTTPError as e:
-            if "429" in str(e):
-                return "❌ Too many requests. Please wait 30 seconds and try again.\n\n💡 The free API has request limits."
-            return "❌ API Error: {error}".format(error=str(e))
-        except requests.exceptions.RequestException as e:
-            return "❌ Connection Error: {error}".format(error=str(e))
-        except (KeyError, IndexError) as e:
-            return "❌ Failed to parse response: {error}".format(error=str(e))
-    
-    return "❌ Failed after {retries} attempts. Please try again later.".format(retries=max_retries)
 
 
+
+@st.cache_data(ttl=600)  # Cache for 10 minutes
 def get_all_stations():
     """Fetch all Buienradar weather stations with their data"""
     url = "https://data.buienradar.nl/2.0/feed/json"
-    response = requests.get(url)
+    response = api_request_with_retry(url)
     data = response.json()
     return data['actual']['stationmeasurements']
+
+
+@st.cache_data(ttl=1800)  # Cache for 30 minutes
+def get_five_day_forecast():
+    """Fetch 5-day weather forecast from Buienradar"""
+    url = "https://data.buienradar.nl/2.0/feed/json"
+    response = api_request_with_retry(url)
+    data = response.json()
+    return data['forecast']['fivedayforecast']
+
+
+def get_sun_intensity_level(sunpower):
+    """Determine sun intensity level from sunpower (W/m²)"""
+    if sunpower is None or sunpower == 0:
+        return {
+            'level': 'None',
+            'color': 'gray',
+            'icon': '🌙',
+            'advice': 'No sun protection needed'
+        }
+    elif sunpower < 100:
+        return {
+            'level': 'Low',
+            'color': 'green',
+            'icon': '🌤️',
+            'advice': 'Minimal sun protection needed'
+        }
+    elif sunpower < 300:
+        return {
+            'level': 'Moderate',
+            'color': 'orange',
+            'icon': '☀️',
+            'advice': 'Consider sunscreen if outdoors for extended periods'
+        }
+    else:
+        return {
+            'level': 'High',
+            'color': 'red',
+            'icon': '🌞',
+            'advice': 'Sunscreen recommended! Limit exposure during peak hours'
+        }
 
 
 def get_activity_recommendations(station):
@@ -302,9 +319,19 @@ def get_clothing_advice(station):
     return advice
 
 
-def get_multi_city_weather(user_city=None, user_station=None):
-    """Get weather data for user's city + 5 major Dutch cities"""
+def get_multi_city_weather(user_city=None, user_station=None, comparison_cities=None):
+    """Get weather data for user's city + configurable Dutch cities"""
     comparison_data = []
+    
+    # Default cities if none provided
+    if comparison_cities is None:
+        comparison_cities = {
+            'Amsterdam': (52.3676, 4.9041),
+            'Rotterdam': (51.9225, 4.47917),
+            'The Hague': (52.0705, 4.3007),
+            'Utrecht': (52.0907, 5.1214),
+            'Eindhoven': (51.4416, 5.4697)
+        }
     
     # Add user's searched city first (if provided)
     if user_city and user_station:
@@ -316,18 +343,9 @@ def get_multi_city_weather(user_city=None, user_station=None):
             'station': user_station.get('stationname', 'Unknown')
         })
     
-    # Add 5 major Dutch cities
-    cities = {
-        'Amsterdam': (52.3676, 4.9041),
-        'Rotterdam': (51.9225, 4.47917),
-        'The Hague': (52.0705, 4.3007),
-        'Utrecht': (52.0907, 5.1214),
-        'Eindhoven': (51.4416, 5.4697)
-    }
-    
     all_stations = get_all_stations()
     
-    for city_name, coords in cities.items():
+    for city_name, coords in comparison_cities.items():
         # Skip if this is the same city as user's search
         if user_city and city_name.lower() == user_city.lower():
             continue
@@ -458,18 +476,26 @@ def create_weather_map(stations, user_coords=None, user_city=None):
 
 
 def speak_text(message):
-    """Speak weather summary aloud"""
-    engine = pyttsx3.init()
-    engine.say(message)
-    engine.runAndWait()
+    """Speak weather summary aloud with fallback"""
+    try:
+        engine = pyttsx3.init()
+        engine.setProperty('rate', 165)
+        engine.setProperty('volume', 1.0)
+        engine.say(message)
+        engine.runAndWait()
+        return True, "Success"
+    except Exception as e:
+        return False, str(e)
 
 
 # --- Streamlit UI ---
 
-st.set_page_config(page_title="Weather AI Agent", page_icon="🌦️", layout="wide")
+st.set_page_config(page_title="WeerWijs", page_icon="🌦️", layout="wide")
 
-st.title("�️ Dutch Weather Intelligence Platform")
-st.write("Professional weather insights for the Netherlands - Real-time data, smart recommendations, and comprehensive city comparisons.")
+st.title("🌦️ WeerWijs")
+st.write("*Your smart Dutch weather companion* - Real-time insights, smart recommendations, and comprehensive city comparisons.")
+
+# Connection status check removed - only show errors in fetch process
 
 # Initialize session state
 if 'weather_data' not in st.session_state:
@@ -478,34 +504,77 @@ if 'city_name' not in st.session_state:
     st.session_state.city_name = None
 if 'chat_messages' not in st.session_state:
     st.session_state.chat_messages = []
-if 'gemini_api_key' not in st.session_state:
-    st.session_state.gemini_api_key = None
+if 'first_load' not in st.session_state:
+    st.session_state.first_load = True
 
-# Input city name
-city = st.text_input("Which city's weather would you like to explore?", "Leiden", placeholder="e.g., Amsterdam, Rotterdam, Utrecht...")
+# Auto-load Amsterdam on first visit
+if st.session_state.first_load:
+    st.session_state.first_load = False
+    default_city = "Amsterdam"
+    with st.spinner("Loading weather for Amsterdam..."):
+        try:
+            coords = get_city_coordinates(default_city)
+            if coords:
+                station, distance = find_nearest_station(coords)
+                all_stations = get_all_stations()
+                if station:
+                    st.session_state.weather_data = {
+                        'coords': coords,
+                        'station': station,
+                        'distance': distance,
+                        'all_stations': all_stations
+                    }
+                    st.session_state.city_name = default_city
+        except Exception:
+            pass  # Silently fail, user can search manually
 
-if st.button("Get Weather"):
+# Search Form with prominent styling
+st.markdown("### 🔍 **Explore Weather by City**")
+with st.form("city_search_form", clear_on_submit=False):
+    city = st.text_input(
+        "Which city's weather would you like to explore?", 
+        "Amsterdam", 
+        placeholder="e.g., Amsterdam, Rotterdam, Utrecht...",
+        help="Enter any city in the Netherlands"
+    )
+    submitted = st.form_submit_button("🌤️ Get Weather", type="primary", use_container_width=True)
+
+if submitted:
     with st.spinner("Fetching live weather data..."):
-        coords = get_city_coordinates(city)
-        if not coords:
-            st.error("⚠️ Could not find that city. Try again.")
-            st.session_state.weather_data = None
-        else:
-            # Get nearest station
-            station, distance = find_nearest_station(coords)
+        try:
+            coords = get_city_coordinates(city)
+            if not coords:
+                st.error("⚠️ City not found in the Netherlands. Please enter a Dutch city (e.g., Amsterdam, Rotterdam, Utrecht, Leiden).")
+                st.session_state.weather_data = None
+            else:
+                # Get nearest station
+                station, distance = find_nearest_station(coords)
+                
+                # Get all stations for the map
+                all_stations = get_all_stations()
+                
+                if station:
+                    # Store data in session state to persist across reruns
+                    st.session_state.weather_data = {
+                        'coords': coords,
+                        'station': station,
+                        'distance': distance,
+                        'all_stations': all_stations
+                    }
+                    st.session_state.city_name = city
+        except Exception as e:
+            st.error(f"""
+            ❌ **Unable to fetch weather data**
             
-            # Get all stations for the map
-            all_stations = get_all_stations()
+            **Error:** {str(e)}
             
-            if station:
-                # Store data in session state to persist across reruns
-                st.session_state.weather_data = {
-                    'coords': coords,
-                    'station': station,
-                    'distance': distance,
-                    'all_stations': all_stations
-                }
-                st.session_state.city_name = city
+            **Possible solutions:**
+            - Check your internet connection
+            - Try again in a few seconds
+            - The weather service might be temporarily down
+            """)
+            if st.button("🔄 Retry"):
+                st.rerun()
 
 # Display weather data if available in session state
 if st.session_state.weather_data:
@@ -516,8 +585,7 @@ if st.session_state.weather_data:
     distance = data['distance']
     all_stations = data['all_stations']
     
-    st.success(f"📍 Found {city_display}: {coords}")
-    st.info(f"📡 Nearest station: {station['stationname']} ({distance:.1f} km away)")
+    # Station info removed for cleaner UI
     
     # Get weather data
     temp = station['temperature']
@@ -535,31 +603,80 @@ if st.session_state.weather_data:
     else:
         msg = f"☀️ The weather looks nice ({temp}°C, no rain). Enjoy your day!"
     
-    # Row 1: Current Weather (left) + Clothing Advisor (right)
-    row1_col1, row1_col2 = st.columns([1, 1])
+    # Row 1: Current Weather + Clothing Advisor + Activity Recommendations (3 columns)
+    row1_col1, row1_col2, row1_col3 = st.columns([1, 1, 1])
     
     with row1_col1:
         st.subheader("Current Weather")
         st.success(msg)
         
-        # Metrics
-        st.metric("🌡️ Temperature", f"{temp}°C")
-        st.metric("💨 Wind Speed", f"{windspeed} Bft")
-        st.metric("🌧️ Precipitation", f"{rain if rain else 0} mm")
-
-        # Forecast
-        forecast_msg = get_forecast(*coords)
-        st.subheader("3-Hour Forecast")
-        st.info(forecast_msg)
+        # Weather metrics as simple list
+        st.write("**Current conditions:**")
+        
+        # Temperature
+        feels_like = station.get('feeltemperature')
+        if feels_like is not None:
+            st.write(f"🌡️ **Temperature:** {temp}°C (feels like {feels_like}°C)")
+        else:
+            st.write(f"🌡️ **Temperature:** {temp}°C")
+        
+        # Wind
+        wind_gusts = station.get('windgusts')
+        if wind_gusts:
+            st.write(f"💨 **Wind Speed:** {windspeed} Bft (gusts: {wind_gusts} m/s)")
+        else:
+            st.write(f"💨 **Wind Speed:** {windspeed} Bft")
+        
+        # Precipitation
+        rain_24h = station.get('rainFallLast24Hour', 0)
+        if rain_24h:
+            st.write(f"🌧️ **Precipitation:** {rain if rain else 0} mm (24h total: {rain_24h} mm)")
+        else:
+            st.write(f"🌧️ **Precipitation:** {rain if rain else 0} mm")
+        
+        # Humidity
+        humidity = station.get('humidity')
+        if humidity is not None:
+            st.write(f"💧 **Humidity:** {humidity}%")
+        
+        # Visibility
+        visibility = station.get('visibility')
+        if visibility is not None:
+            vis_km = visibility / 1000
+            st.write(f"👁️ **Visibility:** {vis_km:.1f} km")
+        
+        # Air pressure
+        pressure = station.get('airpressure')
+        if pressure is not None:
+            st.write(f"🌐 **Air Pressure:** {pressure} hPa")
+        
+        # Sun intensity
+        sunpower = station.get('sunpower')
+        if sunpower is not None:
+            sun_info = get_sun_intensity_level(sunpower)
+            st.write(f"{sun_info['icon']} **Sun Intensity:** {sun_info['level']} ({sunpower} W/m²)")
+            st.caption(f"   {sun_info['advice']}")
 
         # Optional voice alert
         if st.button("🔊 Speak Weather Summary"):
+            forecast_msg = get_forecast(*coords)
             summary = f"In {city_display}, {msg} {forecast_msg}"
-            try:
-                speak_text(summary)
+            # Remove emojis for speech
+            clean_summary = summary.replace("🌧", "").replace("☀️", "").replace("💨", "").replace("🥶", "")
+            
+            success, error_msg = speak_text(clean_summary)
+            
+            if success:
                 st.success("🔊 Speaking weather summary...")
-            except Exception as e:
-                st.error(f"Could not speak: {e}")
+            else:
+                st.warning(f"⚠️ Text-to-speech unavailable: {error_msg}")
+                st.info("💡 Download the summary as text instead:")
+                st.download_button(
+                    label="📥 Download Weather Summary",
+                    data=summary,
+                    file_name=f"weather_{city_display}_{time.strftime('%Y%m%d')}.txt",
+                    mime="text/plain"
+                )
     
     with row1_col2:
         # Clothing Advisor
@@ -579,46 +696,146 @@ if st.session_state.weather_data:
             for acc in clothing['accessories']:
                 st.write(f"  • {acc}")
     
-    # Row 2: Activity Recommendations (full width)
-    st.divider()
-    st.subheader("🎯 Activity Recommendations")
-    recommendations = get_activity_recommendations(station)
-    
-    # Display in 2 columns for better layout
-    act_col1, act_col2 = st.columns(2)
-    for idx, rec in enumerate(recommendations):
-        with (act_col1 if idx % 2 == 0 else act_col2):
+    with row1_col3:
+        # Activity Recommendations
+        st.subheader("🎯 Activity Recommendations")
+        recommendations = get_activity_recommendations(station)
+        
+        for rec in recommendations:
             if rec['suitable']:
                 st.success(f"✅ **{rec['name']}**: {rec['reason']}")
             else:
                 st.warning(f"⚠️ **{rec['name']}**: {rec['reason']}")
     
-    # Row 3: Map (full width)
+    # 3-Hour Rain Forecast
     st.divider()
-    st.subheader("🗺️ Interactive Weather Map")
-    st.caption("Click on any station marker to see details. Your location is marked in dark red.")
+    forecast_msg = get_forecast(*coords)
+    st.subheader("🌧️ 3-Hour Rain Forecast")
+    st.info(forecast_msg)
     
-    # Create and display the map
-    weather_map = create_weather_map(all_stations, coords, city_display)
-    st_folium(weather_map, width=None, height=500)  # Full width
+    # Row 3: 5-Day Forecast (left) + Interactive Map (right)
+    st.divider()
     
-    # Add legend below map
-    st.caption("**Map Legend:**")
-    legend_cols = st.columns(7)
-    with legend_cols[0]:
-        st.markdown("💧 **Raining**")
-    with legend_cols[1]:
-        st.markdown("🟣 **Very Cold** (<5°C)")
-    with legend_cols[2]:
-        st.markdown("☁️ **Cold** (5-10°C)")
-    with legend_cols[3]:
-        st.markdown("🟢 **Nice** (10-20°C)")
-    with legend_cols[4]:
-        st.markdown("🟠 **Warm** (20-25°C)")
-    with legend_cols[5]:
-        st.markdown("🔴 **Hot** (>25°C)")
-    with legend_cols[6]:
-        st.markdown("🏠 **Your Location**")
+    # Two columns for forecast and map
+    forecast_col, map_col = st.columns([1, 1])
+    
+    with forecast_col:
+        st.subheader("📅 5-Day Forecast")
+        
+        try:
+            forecast_data = get_five_day_forecast()
+            
+            if forecast_data and len(forecast_data) > 0:
+                # Prepare data for visualization
+                import plotly.graph_objects as go
+                from datetime import datetime
+                
+                days = []
+                min_temps = []
+                max_temps = []
+                rain_chances = []
+                sun_chances = []
+                
+                for day in forecast_data:
+                    date_str = day['day'][:10]  # Get YYYY-MM-DD
+                    days.append(date_str)
+                    min_temps.append(int(day.get('mintemperature', 0)))
+                    max_temps.append(int(day.get('maxtemperature', 0)))
+                    rain_chances.append(int(day.get('rainChance', 0)))
+                    sun_chances.append(int(day.get('sunChance', 0)))
+                
+                # Create figure with secondary y-axis
+                fig = go.Figure()
+                
+                # Add temperature traces
+                fig.add_trace(go.Scatter(
+                    x=days, y=max_temps,
+                    name='Max Temp',
+                    line=dict(color='red', width=2),
+                    mode='lines+markers'
+                ))
+                fig.add_trace(go.Scatter(
+                    x=days, y=min_temps,
+                    name='Min Temp',
+                    line=dict(color='blue', width=2),
+                    mode='lines+markers',
+                    fill='tonexty',
+                    fillcolor='rgba(200, 200, 255, 0.2)'
+                ))
+                
+                # Add rain chance as bar chart
+                fig.add_trace(go.Bar(
+                    x=days, y=rain_chances,
+                    name='Rain %',
+                    yaxis='y2',
+                    marker=dict(color='lightblue', opacity=0.6)
+                ))
+                
+                # Update layout for side column
+                fig.update_layout(
+                    xaxis_title='Date',
+                    yaxis=dict(title='Temp (°C)'),
+                    yaxis2=dict(
+                        title='Rain %',
+                        overlaying='y',
+                        side='right',
+                        range=[0, 100]
+                    ),
+                    hovermode='x unified',
+                    height=350,
+                    margin=dict(l=20, r=20, t=20, b=20)
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Display all 5 days horizontally
+                st.caption("**5-Day Details:**")
+                fcst_cols = st.columns(5)
+                for idx, day in enumerate(forecast_data):
+                    with fcst_cols[idx]:
+                        # Convert date to DD/MM format
+                        from datetime import datetime
+                        date_obj = datetime.strptime(day['day'][:10], '%Y-%m-%d')
+                        date_str = date_obj.strftime('%d/%m')
+                        st.markdown(f"**{date_str}**")
+                        st.markdown(f"🌡️ {day['mintemperature']}-{day['maxtemperature']}°C")
+                        st.markdown(f"🌧️ {day['rainChance']}%")
+            else:
+                st.info("Forecast unavailable")
+        except Exception as e:
+            st.warning(f"Could not load forecast: {str(e)}")
+    
+    with map_col:
+        st.subheader("🗺️ Weather Map")
+        st.caption("Click markers for details")
+        
+        # Create and display the map
+        weather_map = create_weather_map(all_stations, coords, city_display)
+        st_folium(weather_map, width=None, height=500)
+        
+        # Add legend below map
+        st.caption("**Map Legend:**")
+        legend_cols = st.columns(7)
+        with legend_cols[0]:
+            st.markdown("💧 **Raining**")
+        with legend_cols[1]:
+            st.markdown("🟣 **Frigid**")
+            st.write("<5°C")
+        with legend_cols[2]:
+            st.markdown("⚪ **Cold**")
+            st.write("5-10°C")
+        with legend_cols[3]:
+            st.markdown("🟢 **Nice**")
+            st.write("10-20°C")
+        with legend_cols[4]:
+            st.markdown("🟠 **Warm**")
+            st.write("20-25°C")
+        with legend_cols[5]:
+            st.markdown("🔴 **Hot**")
+            st.write("25+°C")
+        with legend_cols[6]:
+            st.markdown("🏠 **Your**")
+            st.write("Location")
 
 # Multi-City Comparison
 st.divider()
