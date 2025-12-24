@@ -736,13 +736,28 @@ if st.session_state.weather_data:
                 rain_chances = []
                 sun_chances = []
                 
+                # Helper function to safely convert values to int
+                def safe_int(value, default=0):
+                    """Safely convert a value to int, handling various formats"""
+                    if value is None:
+                        return default
+                    try:
+                        # Try direct int conversion first
+                        return int(value)
+                    except (ValueError, TypeError):
+                        try:
+                            # Try float conversion first (handles decimal strings)
+                            return int(float(value))
+                        except (ValueError, TypeError):
+                            return default
+                
                 for day in forecast_data:
                     date_str = day['day'][:10]  # Get YYYY-MM-DD
                     days.append(date_str)
-                    min_temps.append(int(day.get('mintemperature', 0)))
-                    max_temps.append(int(day.get('maxtemperature', 0)))
-                    rain_chances.append(int(day.get('rainChance', 0)))
-                    sun_chances.append(int(day.get('sunChance', 0)))
+                    min_temps.append(safe_int(day.get('mintemperature', 0)))
+                    max_temps.append(safe_int(day.get('maxtemperature', 0)))
+                    rain_chances.append(safe_int(day.get('rainChance', 0)))
+                    sun_chances.append(safe_int(day.get('sunChance', 0)))
                 
                 # Create figure with secondary y-axis
                 fig = go.Figure()
