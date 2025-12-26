@@ -45,25 +45,71 @@ def api_request_with_retry(url, max_retries=3, timeout=10):
 @st.cache_data(ttl=3600)  # Cache for 1 hour
 def get_city_coordinates(city):
     """Get city coordinates and validate it's in Netherlands"""
-    geolocator = Nominatim(user_agent="weather_app", timeout=10)
     
-    # Search WITHOUT Netherlands constraint to get the actual main city
-    # (searching "Madrid, Netherlands" might find a street named Madrid in NL)
-    location = geolocator.geocode(city)
+    # Fallback coordinates for major Dutch cities (in case Nominatim fails)
+    DUTCH_CITIES = {
+        'amsterdam': (52.3676, 4.9041),
+        'rotterdam': (51.9225, 4.47917),
+        'the hague': (52.0705, 4.3007),
+        'den haag': (52.0705, 4.3007),
+        'utrecht': (52.0907, 5.1214),
+        'eindhoven': (51.4416, 5.4697),
+        'groningen': (53.2194, 6.5665),
+        'tilburg': (51.5555, 5.0913),
+        'almere': (52.3508, 5.2647),
+        'breda': (51.5719, 4.7683),
+        'nijmegen': (51.8126, 5.8372),
+        'enschede': (52.2215, 6.8937),
+        'haarlem': (52.3874, 4.6462),
+        'arnhem': (51.9851, 5.8987),
+        'zaanstad': (52.4389, 4.8294),
+        'amersfoort': (52.1561, 5.3878),
+        'apeldoorn': (52.2112, 5.9699),
+        'leiden': (52.1601, 4.4970),
+        'maastricht': (50.8514, 5.6909),
+        'dordrecht': (51.8133, 4.6901),
+        'zoetermeer': (52.0575, 4.4932),
+        'zwolle': (52.5168, 6.0830),
+        'delft': (52.0116, 4.3571),
+        'alkmaar': (52.6318, 4.7474),
+    }
     
-    if location:
-        lat, lon = location.latitude, location.longitude
+    # First try the fallback dictionary for common cities
+    city_lower = city.lower().strip()
+    if city_lower in DUTCH_CITIES:
+        return DUTCH_CITIES[city_lower]
+    
+    # If not in fallback, try Nominatim API
+    try:
+        # Use a descriptive user agent - required by Nominatim usage policy
+        geolocator = Nominatim(
+            user_agent="WeerWijs_Dutch_Weather_App/1.0 (https://github.com/yourusername/weatheragent)",
+            timeout=10
+        )
         
-        # Validate coordinates are within Netherlands boundaries
-        # Netherlands: roughly 50.75°N to 53.7°N, 3.2°E to 7.2°E
-        if 50.5 <= lat <= 53.8 and 3.0 <= lon <= 7.5:
-            return (lat, lon)
-        else:
-            # City is outside Netherlands
-            return None
-    
-    # If no location found at all
-    return None
+        # Search WITHOUT Netherlands constraint to get the actual main city
+        # (searching "Madrid, Netherlands" might find a street named Madrid in NL)
+        location = geolocator.geocode(city)
+        
+        if location:
+            lat, lon = location.latitude, location.longitude
+            
+            # Validate coordinates are within Netherlands boundaries
+            # Netherlands: roughly 50.75°N to 53.7°N, 3.2°E to 7.2°E
+            if 50.5 <= lat <= 53.8 and 3.0 <= lon <= 7.5:
+                return (lat, lon)
+            else:
+                # City is outside Netherlands
+                return None
+        
+        # If no location found at all
+        return None
+        
+    except Exception as e:
+        # If Nominatim fails (rate limit, network issue, etc.), return None
+        # The error will be handled by the calling function
+        print(f"Geocoding failed for {city}: {str(e)}")
+        return None
 
 
 def find_nearest_station(user_coords):
