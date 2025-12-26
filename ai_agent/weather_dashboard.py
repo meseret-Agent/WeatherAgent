@@ -546,22 +546,30 @@ st.markdown("""
 <style>
     /* Mobile responsive styles */
     @media (max-width: 768px) {
-        /* Stack columns vertically on mobile */
+        /* Allow columns to wrap instead of forcing full vertical stack */
         .stColumns {
-            flex-direction: column !important;
+            flex-wrap: wrap !important;
+            gap: 0.5rem !important;
         }
         
-        /* Full width columns on mobile */
+        /* Columns should be flexible but allow wrapping */
         [data-testid="column"] {
-            width: 100% !important;
-            flex: 1 1 100% !important;
-            min-width: 100% !important;
+            flex: 1 1 45% !important;  /* Allow 2 columns per row on mobile */
+            min-width: 45% !important;
             margin-bottom: 1rem;
+        }
+        
+        /* For very small items (like 5-7 columns), make them even smaller */
+        .stColumns:has(> [data-testid="column"]:nth-child(5)) [data-testid="column"],
+        .stColumns:has(> [data-testid="column"]:nth-child(6)) [data-testid="column"],
+        .stColumns:has(> [data-testid="column"]:nth-child(7)) [data-testid="column"] {
+            flex: 1 1 30% !important;  /* 3 columns per row for legend/city comparison */
+            min-width: 30% !important;
         }
         
         /* Reduce padding on mobile for more screen space */
         .block-container {
-            padding: 1rem 1rem 2rem 1rem !important;
+            padding: 1rem 0.75rem 2rem 0.75rem !important;
             max-width: 100% !important;
         }
         
@@ -619,12 +627,18 @@ st.markdown("""
         
         /* Reduce caption font size slightly */
         .stCaptionContainer {
-            font-size: 0.85rem !important;
+            font-size: 0.75rem !important;
         }
         
         /* Make dividers more subtle on mobile */
         hr {
             margin: 1rem 0 !important;
+        }
+        
+        /* Make markdown text in columns more compact */
+        [data-testid="column"] p {
+            font-size: 0.9rem !important;
+            margin-bottom: 0.5rem !important;
         }
     }
     
