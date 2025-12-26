@@ -495,6 +495,120 @@ st.set_page_config(page_title="WeerWijs", page_icon="🌦️", layout="wide")
 st.title("🌦️ WeerWijs")
 st.write("*Your smart Dutch weather companion* - Real-time insights, smart recommendations, and comprehensive city comparisons.")
 
+# Inject responsive CSS for mobile optimization
+st.markdown("""
+<style>
+    /* Mobile responsive styles */
+    @media (max-width: 768px) {
+        /* Stack columns vertically on mobile */
+        .stColumns {
+            flex-direction: column !important;
+        }
+        
+        /* Full width columns on mobile */
+        [data-testid="column"] {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+            min-width: 100% !important;
+            margin-bottom: 1rem;
+        }
+        
+        /* Reduce padding on mobile for more screen space */
+        .block-container {
+            padding: 1rem 1rem 2rem 1rem !important;
+            max-width: 100% !important;
+        }
+        
+        /* Adjust font sizes for mobile readability */
+        h1 { 
+            font-size: 1.8rem !important; 
+            margin-bottom: 0.5rem !important;
+        }
+        h2, .stSubheader { 
+            font-size: 1.4rem !important; 
+            margin-top: 1rem !important;
+        }
+        h3 { 
+            font-size: 1.2rem !important; 
+        }
+        
+        /* Ensure buttons are touch-friendly (min 44px height) */
+        .stButton button {
+            min-height: 44px !important;
+            padding: 0.75rem 1rem !important;
+            font-size: 1rem !important;
+        }
+        
+        /* Make form submit buttons full width on mobile */
+        [data-testid="stFormSubmitButton"] button {
+            width: 100% !important;
+        }
+        
+        /* Optimize input fields for mobile */
+        input[type="text"] {
+            font-size: 16px !important; /* Prevents zoom on iOS */
+            padding: 0.75rem !important;
+        }
+        
+        /* Adjust metrics and info boxes */
+        [data-testid="stMetricValue"] {
+            font-size: 1.5rem !important;
+        }
+        
+        /* Make success/warning/info boxes more compact */
+        .stAlert {
+            padding: 0.75rem !important;
+            margin: 0.5rem 0 !important;
+        }
+        
+        /* Optimize plotly charts for mobile */
+        .js-plotly-plot {
+            width: 100% !important;
+        }
+        
+        /* Ensure maps are responsive */
+        iframe {
+            max-width: 100% !important;
+        }
+        
+        /* Reduce caption font size slightly */
+        .stCaptionContainer {
+            font-size: 0.85rem !important;
+        }
+        
+        /* Make dividers more subtle on mobile */
+        hr {
+            margin: 1rem 0 !important;
+        }
+    }
+    
+    /* Tablet optimization (between mobile and desktop) */
+    @media (min-width: 769px) and (max-width: 1024px) {
+        .block-container {
+            padding: 2rem 2rem 3rem 2rem !important;
+        }
+        
+        [data-testid="column"] {
+            min-width: 45% !important;
+        }
+    }
+    
+    /* Ensure all devices can scroll smoothly */
+    html {
+        scroll-behavior: smooth;
+    }
+    
+    /* Prevent horizontal overflow */
+    body {
+        overflow-x: hidden !important;
+    }
+    
+    .main {
+        overflow-x: hidden !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Connection status check removed - only show errors in fetch process
 
 # Initialize session state
