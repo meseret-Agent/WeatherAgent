@@ -1,0 +1,16 @@
+name: Keep Streamlit App Awake
+
+on:
+  schedule:
+    # Runs twice a day (at 00:00 and 12:00 UTC)
+    # This keeps the app active without unnecessary resource usage.
+    - cron: '0 0,12 * * *'
+  workflow_dispatch: # Allows manual triggering from the Actions tab in GitHub
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Streamlit App
+        # Using a HEAD request (-I) to check connection status efficiently
+        run: curl -I -s https://weerwijs.streamlit.app | head -n 1
