@@ -40,7 +40,7 @@ git push origin main
 2. **Select repository:**
    - Repository: `WeatherAgent` (your repo)
    - Branch: `main`
-   - Main file path: `ai_agent/weather_dashboard.py`
+   - Main file path: `app.py`
 
 3. **Advanced settings** (optional):
    - App URL: Choose a custom subdomain (e.g., `weerwijs.streamlit.app`)
@@ -101,7 +101,7 @@ To use your own domain (e.g., `weather.yourdomain.com`):
 
 Before deploying updates:
 
-- [ ] Test locally with `streamlit run weather_dashboard.py`
+- [ ] Test locally with `streamlit run app.py`
 - [ ] Check all features work
 - [ ] Commit changes with clear message
 - [ ] Push to GitHub
