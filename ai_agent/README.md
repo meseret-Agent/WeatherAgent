@@ -114,3 +114,6 @@ ai_agent/
 ```
 
 This project is ideal for users in the Netherlands who want a comprehensive, interactive personal weather assistant.
+
+---
+*Last deployment: 2025-12-24*
