@@ -56,18 +56,6 @@ source .venv/bin/activate
 .venv\Scripts\activate
 ```
 
-**If you're already in the `ai_agent` directory:**
-
-*macOS/Linux:*
-```bash
-source ../.venv/bin/activate
-```
-
-*Windows:*
-```bash
-..\.venv\Scripts\activate
-```
-
 After activation, you should see `(.venv)` at the beginning of your command prompt.
 
 To deactivate when you're done:
@@ -77,13 +65,9 @@ deactivate
 
 ### 2. Streamlit Weather Dashboard (Recommended)
 
-1. Navigate to the `ai_agent` directory:
+1. Run the Streamlit app:
    ```bash
-   cd ai_agent
-   ```
-2. Run the Streamlit app:
-   ```bash
-   streamlit run weather_dashboard.py
+   streamlit run app.py
    ```
 3. Open the provided URL in your browser (usually `http://localhost:8501`).
 
@@ -99,18 +83,17 @@ deactivate
 
 Install the required dependencies:
 ```bash
-pip install -r ai_agent/requirements.txt
+pip install -r requirements.txt
 ```
 
 ## Project Structure
 
 ```
-ai_agent/
-    README.md               # Project documentation
-    requirements.txt        # Python dependencies
-    weather_dashboard.py    # Main Streamlit application (GUI)
-    weather_agent.py        # Command-line interface logic
-    .env                    # Environment variables (optional)
+README.md               # Project documentation
+requirements.txt        # Python dependencies
+app.py                  # Main Streamlit application (GUI)
+weather_agent.py        # Command-line interface logic
+.env                    # Environment variables (optional)
 ```
 
 This project is ideal for users in the Netherlands who want a comprehensive, interactive personal weather assistant.
