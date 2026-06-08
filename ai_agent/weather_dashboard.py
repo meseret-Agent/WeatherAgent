@@ -45,25 +45,71 @@ def api_request_with_retry(url, max_retries=3, timeout=10):
 @st.cache_data(ttl=3600)  # Cache for 1 hour
 def get_city_coordinates(city):
     """Get city coordinates and validate it's in Netherlands"""
-    geolocator = Nominatim(user_agent="weather_app", timeout=10)
     
-    # Search WITHOUT Netherlands constraint to get the actual main city
-    # (searching "Madrid, Netherlands" might find a street named Madrid in NL)
-    location = geolocator.geocode(city)
+    # Fallback coordinates for major Dutch cities (in case Nominatim fails)
+    DUTCH_CITIES = {
+        'amsterdam': (52.3676, 4.9041),
+        'rotterdam': (51.9225, 4.47917),
+        'the hague': (52.0705, 4.3007),
+        'den haag': (52.0705, 4.3007),
+        'utrecht': (52.0907, 5.1214),
+        'eindhoven': (51.4416, 5.4697),
+        'groningen': (53.2194, 6.5665),
+        'tilburg': (51.5555, 5.0913),
+        'almere': (52.3508, 5.2647),
+        'breda': (51.5719, 4.7683),
+        'nijmegen': (51.8126, 5.8372),
+        'enschede': (52.2215, 6.8937),
+        'haarlem': (52.3874, 4.6462),
+        'arnhem': (51.9851, 5.8987),
+        'zaanstad': (52.4389, 4.8294),
+        'amersfoort': (52.1561, 5.3878),
+        'apeldoorn': (52.2112, 5.9699),
+        'leiden': (52.1601, 4.4970),
+        'maastricht': (50.8514, 5.6909),
+        'dordrecht': (51.8133, 4.6901),
+        'zoetermeer': (52.0575, 4.4932),
+        'zwolle': (52.5168, 6.0830),
+        'delft': (52.0116, 4.3571),
+        'alkmaar': (52.6318, 4.7474),
+    }
     
-    if location:
-        lat, lon = location.latitude, location.longitude
+    # First try the fallback dictionary for common cities
+    city_lower = city.lower().strip()
+    if city_lower in DUTCH_CITIES:
+        return DUTCH_CITIES[city_lower]
+    
+    # If not in fallback, try Nominatim API
+    try:
+        # Use a descriptive user agent - required by Nominatim usage policy
+        geolocator = Nominatim(
+            user_agent="WeerWijs_Dutch_Weather_App/1.0 (https://github.com/yourusername/weatheragent)",
+            timeout=10
+        )
         
-        # Validate coordinates are within Netherlands boundaries
-        # Netherlands: roughly 50.75°N to 53.7°N, 3.2°E to 7.2°E
-        if 50.5 <= lat <= 53.8 and 3.0 <= lon <= 7.5:
-            return (lat, lon)
-        else:
-            # City is outside Netherlands
-            return None
-    
-    # If no location found at all
-    return None
+        # Search WITHOUT Netherlands constraint to get the actual main city
+        # (searching "Madrid, Netherlands" might find a street named Madrid in NL)
+        location = geolocator.geocode(city)
+        
+        if location:
+            lat, lon = location.latitude, location.longitude
+            
+            # Validate coordinates are within Netherlands boundaries
+            # Netherlands: roughly 50.75°N to 53.7°N, 3.2°E to 7.2°E
+            if 50.5 <= lat <= 53.8 and 3.0 <= lon <= 7.5:
+                return (lat, lon)
+            else:
+                # City is outside Netherlands
+                return None
+        
+        # If no location found at all
+        return None
+        
+    except Exception as e:
+        # If Nominatim fails (rate limit, network issue, etc.), return None
+        # The error will be handled by the calling function
+        print(f"Geocoding failed for {city}: {str(e)}")
+        return None
 
 
 def find_nearest_station(user_coords):
@@ -494,6 +540,134 @@ st.set_page_config(page_title="WeerWijs", page_icon="🌦️", layout="wide")
 
 st.title("🌦️ WeerWijs")
 st.write("*Your smart Dutch weather companion* - Real-time insights, smart recommendations, and comprehensive city comparisons.")
+
+# Inject responsive CSS for mobile optimization
+st.markdown("""
+<style>
+    /* Mobile responsive styles */
+    @media (max-width: 768px) {
+        /* Allow columns to wrap instead of forcing full vertical stack */
+        .stColumns {
+            flex-wrap: wrap !important;
+            gap: 0.5rem !important;
+        }
+        
+        /* Columns should be flexible but allow wrapping */
+        [data-testid="column"] {
+            flex: 1 1 45% !important;  /* Allow 2 columns per row on mobile */
+            min-width: 45% !important;
+            margin-bottom: 1rem;
+        }
+        
+        /* For very small items (like 5-7 columns), make them even smaller */
+        .stColumns:has(> [data-testid="column"]:nth-child(5)) [data-testid="column"],
+        .stColumns:has(> [data-testid="column"]:nth-child(6)) [data-testid="column"],
+        .stColumns:has(> [data-testid="column"]:nth-child(7)) [data-testid="column"] {
+            flex: 1 1 30% !important;  /* 3 columns per row for legend/city comparison */
+            min-width: 30% !important;
+        }
+        
+        /* Reduce padding on mobile for more screen space */
+        .block-container {
+            padding: 1rem 0.75rem 2rem 0.75rem !important;
+            max-width: 100% !important;
+        }
+        
+        /* Adjust font sizes for mobile readability */
+        h1 { 
+            font-size: 1.8rem !important; 
+            margin-bottom: 0.5rem !important;
+        }
+        h2, .stSubheader { 
+            font-size: 1.4rem !important; 
+            margin-top: 1rem !important;
+        }
+        h3 { 
+            font-size: 1.2rem !important; 
+        }
+        
+        /* Ensure buttons are touch-friendly (min 44px height) */
+        .stButton button {
+            min-height: 44px !important;
+            padding: 0.75rem 1rem !important;
+            font-size: 1rem !important;
+        }
+        
+        /* Make form submit buttons full width on mobile */
+        [data-testid="stFormSubmitButton"] button {
+            width: 100% !important;
+        }
+        
+        /* Optimize input fields for mobile */
+        input[type="text"] {
+            font-size: 16px !important; /* Prevents zoom on iOS */
+            padding: 0.75rem !important;
+        }
+        
+        /* Adjust metrics and info boxes */
+        [data-testid="stMetricValue"] {
+            font-size: 1.5rem !important;
+        }
+        
+        /* Make success/warning/info boxes more compact */
+        .stAlert {
+            padding: 0.75rem !important;
+            margin: 0.5rem 0 !important;
+        }
+        
+        /* Optimize plotly charts for mobile */
+        .js-plotly-plot {
+            width: 100% !important;
+        }
+        
+        /* Ensure maps are responsive */
+        iframe {
+            max-width: 100% !important;
+        }
+        
+        /* Reduce caption font size slightly */
+        .stCaptionContainer {
+            font-size: 0.75rem !important;
+        }
+        
+        /* Make dividers more subtle on mobile */
+        hr {
+            margin: 1rem 0 !important;
+        }
+        
+        /* Make markdown text in columns more compact */
+        [data-testid="column"] p {
+            font-size: 0.9rem !important;
+            margin-bottom: 0.5rem !important;
+        }
+    }
+    
+    /* Tablet optimization (between mobile and desktop) */
+    @media (min-width: 769px) and (max-width: 1024px) {
+        .block-container {
+            padding: 2rem 2rem 3rem 2rem !important;
+        }
+        
+        [data-testid="column"] {
+            min-width: 45% !important;
+        }
+    }
+    
+    /* Ensure all devices can scroll smoothly */
+    html {
+        scroll-behavior: smooth;
+    }
+    
+    /* Prevent horizontal overflow */
+    body {
+        overflow-x: hidden !important;
+    }
+    
+    .main {
+        overflow-x: hidden !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # Connection status check removed - only show errors in fetch process
 
