@@ -2,9 +2,9 @@ name: Keep Streamlit App Awake
 
 on:
   schedule:
-    # Runs twice a day (at 00:00 and 12:00 UTC)
-    # This keeps the app active without unnecessary resource usage.
-    - cron: '0 0,12 * * *'
+    # Runs every 6 hours to prevent Streamlit from sleeping due to inactivity.
+    # Streamlit Community Cloud sleeps apps after several days of no real traffic.
+    - cron: '0 */6 * * *'
   workflow_dispatch: # Allows manual triggering from the Actions tab in GitHub
 
 jobs:
@@ -12,5 +12,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping Streamlit App
-        # Using a HEAD request (-I) to check connection status efficiently
-        run: curl -I -s https://weerwijs.streamlit.app | head -n 1
+        # Use GET (not HEAD -I) so Streamlit registers it as real traffic.
+        # -L follows redirects, -s silences progress, -o /dev/null discards body.
+        # -w prints the HTTP status code so we can confirm the app responded.
+        run: |
+          STATUS=$(curl -L -s -o /dev/null -w "%{http_code}" https://weerwijs.streamlit.app)
+          echo "HTTP status: $STATUS"
+          if [ "$STATUS" -ne 200 ]; then
+            echo "⚠️ App returned non-200 status: $STATUS"
+            exit 1
+          fi
+          echo "✅ App is awake and responded with 200."
