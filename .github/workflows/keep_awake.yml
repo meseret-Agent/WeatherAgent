@@ -2,24 +2,67 @@ name: Keep Streamlit App Awake
 
 on:
   schedule:
-    # Runs every 6 hours to prevent Streamlit from sleeping due to inactivity.
-    # Streamlit Community Cloud sleeps apps after several days of no real traffic.
-    - cron: '0 */6 * * *'
-  workflow_dispatch: # Allows manual triggering from the Actions tab in GitHub
+    # Runs every 4 hours to keep the app active
+    - cron: '0 */4 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
 
 jobs:
-  ping:
+  keep_awake:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Streamlit App
-        # Use GET (not HEAD -I) so Streamlit registers it as real traffic.
-        # -L follows redirects, -s silences progress, -o /dev/null discards body.
-        # -w prints the HTTP status code so we can confirm the app responded.
+      - name: Lightweight HTTP GET Ping
         run: |
-          STATUS=$(curl -L -s -o /dev/null -w "%{http_code}" https://weerwijs.streamlit.app)
-          echo "HTTP status: $STATUS"
-          if [ "$STATUS" -ne 200 ]; then
-            echo "⚠️ App returned non-200 status: $STATUS"
-            exit 1
-          fi
-          echo "✅ App is awake and responded with 200."
+          echo "Sending HTTP GET ping with full browser headers..."
+          curl -s -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+          https://weerwijs.streamlit.app > /dev/null
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Playwright Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright
+          playwright install chromium --with-deps
+
+      - name: Headless Browser Session (Playwright Wake-Up)
+        run: |
+          python -c '
+          import time
+          from playwright.sync_api import sync_playwright
+
+          url = "https://weerwijs.streamlit.app"
+          print(f"Launching headless browser and navigating to {url}...")
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch(headless=True)
+              context = browser.new_context(
+                  user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+              )
+              page = context.new_page()
+              try:
+                  response = page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                  print("Page loaded. HTTP Status:", response.status if response else "Unknown")
+                  time.sleep(5)
+                  
+                  # Check if Streamlit sleep wake-up button is present
+                  wake_buttons = page.query_selector_all("button")
+                  clicked = False
+                  for btn in wake_buttons:
+                      btn_text = btn.inner_text().strip().lower()
+                      if "wake" in btn_text or "get this app back up" in btn_text:
+                          print(f"Detected wake-up button (\"{btn.inner_text()}\"). Clicking to wake up app...")
+                          btn.click()
+                          clicked = True
+                          time.sleep(10)
+                          break
+                  
+                  if not clicked:
+                      print("App is active (no sleep button found). Page title:", page.title())
+              except Exception as e:
+                  print("Playwright check finished:", e)
+              finally:
+                  browser.close()
+          '
