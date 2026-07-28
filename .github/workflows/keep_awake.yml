@@ -11,23 +11,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Lightweight HTTP GET Ping
+        continue-on-error: true
         run: |
           echo "Sending HTTP GET ping with full browser headers..."
-          curl -s -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-          https://weerwijs.streamlit.app > /dev/null
+          curl -s -L --max-redirs 5 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+          https://weerwijs.streamlit.app > /dev/null || true
 
       - name: Set up Python
+        if: always()
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install Playwright Dependencies
+        if: always()
         run: |
           python -m pip install --upgrade pip
           pip install playwright
           playwright install chromium --with-deps
 
       - name: Headless Browser Session (Playwright Wake-Up)
+        if: always()
         run: |
           python -c '
           import time
